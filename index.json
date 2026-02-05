@@ -2,7 +2,7 @@
   "name": "DB's worlddev-tools",
   "author": "DoggoBrutus",
   "id": "com.doggobrutus.worlddev-tools",
-  "url": "https://github.com/PupBrutus/brutus-worlddev-tools/index.json",
+  "url": "https://pupbrutus.github.io/brutus-worlddev-tools/index.json",
   "packages": {
     "com.doggobrutus.worlddev-tools": {
       "versions": {
