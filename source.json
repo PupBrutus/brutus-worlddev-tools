@@ -1,15 +1,15 @@
 {
-    "name":"Example Listing",
-    "id":"com.vrchat.example-listing",
-    "url":"https://vrchat-community.github.io/template-package-listing/index.json",
+    "name":"DB's worlddev-tools",
+    "id":"com.doggobrutus.worlddev-tools",
+    "url":"https://doggobrutus.github.io/brutus-worlddev-tools/index.json",
     "author":{
-        "email":"developer@vrchat.com",
-        "name":"VRChat",
-        "url":"https://hello.vrchat.com"
+        "email":"brutus@brutus.dog",
+        "name":"DoggoBrutus",
+        "url":"https://github.com/PupBrutus/brutus-worlddev-tools"
     },
-    "description":"Example listing of VRChat packages",
+    "description":"My tools that help making VRC Worlds - Udon Behavior Profiler (Network Details/Sync estimations), Lighting Analyzer and Polygon Counter",
     "infoLink":{
-        "url":"http://github.com/vrchat-community/template-package-listing",
+        "url":"https://github.com/PupBrutus/brutus-worlddev-tools",
         "text":"View on GitHub"
     },
     "bannerUrl":"banner.png",
