@@ -1,20 +1,25 @@
 {
-    "name":"DB's worlddev-tools",
-    "id":"com.doggobrutus.worlddev-tools",
-    "url":"https://pupbrutus.github.io/brutus-worlddev-tools/index.json",
-    "author":{
-        "email":"brutus@brutus.dog",
-        "name":"DoggoBrutus",
-        "url":"https://github.com/PupBrutus/brutus-worlddev-tools"
-    },
-    "description":"My tools that help making VRC Worlds - Udon Behavior Profiler (Network Details/Sync estimations), Lighting Analyzer and Polygon Counter",
-    "infoLink":{
-        "url":"https://github.com/PupBrutus/brutus-worlddev-tools",
-        "text":"View on GitHub"
-    },
-    "bannerUrl":"banner.png",
-    "githubRepos":[
-        "PupBrutus/brutus-worlddev-tools"
-    ],
-    "packages":[]
+  "name": "DB's worlddev-tools",
+  "id": "com.doggobrutus.worlddev-tools",
+  "url": "https://pupbrutus.github.io/brutus-worlddev-tools/index.json",
+  "author": {
+    "email": "brutus@brutus.dog",
+    "name": "DoggoBrutus",
+    "url": "https://github.com/PupBrutus/brutus-worlddev-tools"
+  },
+  "description": "My tools that help making VRC Worlds - Udon Behavior Profiler (Network Details/Sync estimations), Lighting Analyzer and Polygon Counter",
+  "infoLink": {
+    "url": "https://github.com/PupBrutus/brutus-worlddev-tools",
+    "text": "View on GitHub"
+  },
+  "bannerUrl": "banner.png",
+  "githubRepos": [],
+  "packages": [
+    {
+      "name": "com.doggobrutus.worlddev-tools",
+      "releases": [
+        "https://github.com/PupBrutus/brutus-worlddev-tools/releases/download/1.0.1/com.doggobrutus.worlddev-tools-1.0.1.zip"
+      ]
+    }
+  ]
 }
