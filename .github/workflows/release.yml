@@ -1,37 +1,21 @@
 name: Build Release
 
-on: 
+on:
   workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - "Editor/**"
+      - "package.json"
+      - ".github/workflows/release.yml"
 
 jobs:
-
-  # Validate Repository Configuration
-  config:
-    runs-on: ubuntu-latest
-    outputs:
-      config_package: ${{ steps.config_package.outputs.configPackage }}
-    steps:
-
-    # Ensure that required repository variable has been created for the Package
-    - name: Validate Package Config
-      id: config_package
-      run: |
-        if [ "${{ vars.PACKAGE_NAME }}" != "" ]; then
-          echo "configPackage=true" >> $GITHUB_OUTPUT;
-        else
-          echo "configPackage=false" >> $GITHUB_OUTPUT;
-        fi
-
-  # Build and release the Package
-  # If the repository is not configured properly, this job will be skipped
   build:
-    needs: config
     runs-on: ubuntu-latest
     permissions:
       contents: write
     env:
-      packagePath: Packages/${{ vars.PACKAGE_NAME }}
-    if: needs.config.outputs.config_package == 'true'
+      packagePath: .
     steps:
 
       # Checkout Local Repository
@@ -43,24 +27,28 @@ jobs:
         id: version
         uses: zoexx/github-action-json-file-properties@b9f36ce6ee6fe2680cd3c32b2c62e22eade7e590
         with: 
-            file_path: "${{ env.packagePath }}/package.json"
+        file_path: "${{ env.packagePath }}/package.json"
             prop_path: "version"
     
       # Configure the Environment Variables needed for releasing the Package
       - name: Set Environment Variables
         run: |
-          echo "zipFile=${{ vars.PACKAGE_NAME }}-${{ steps.version.outputs.value }}".zip >> $GITHUB_ENV
-          echo "unityPackage=${{ vars.PACKAGE_NAME }}-${{ steps.version.outputs.value }}.unitypackage" >> $GITHUB_ENV
+          packageName=$(jq -r '.name' "${{ env.packagePath }}/package.json")
+          echo "packageName=${packageName}" >> $GITHUB_ENV
+          echo "zipFile=${packageName}-${{ steps.version.outputs.value }}.zip" >> $GITHUB_ENV
+          echo "unityPackage=${packageName}-${{ steps.version.outputs.value }}.unitypackage" >> $GITHUB_ENV
           echo "version=${{ steps.version.outputs.value }}" >> $GITHUB_ENV
 
       # Zip the Package for release
       - name: Create Package Zip
-        working-directory: "${{ env.packagePath }}"
-        run: zip -r "${{ github.workspace }}/${{ env.zipFile }}" .
+        run: |
+          zip -r "${{ github.workspace }}/${{ env.zipFile }}" Editor README.md package.json LICENSE
       
-      # Build a list of .meta files for future use
-      - name: Track Package Meta Files
-        run: find "${{ env.packagePath }}/" -name \*.meta >> metaList
+      # Build a list of files for the UnityPackage
+      - name: Track Package Files
+        run: |
+          find "${{ env.packagePath }}/Editor" -name \*.meta > metaList
+          printf "README.md\npackage.json\nLICENSE\n" >> metaList
       
       # Make a UnityPackage version of the Package for release
       - name: Create UnityPackage
@@ -85,3 +73,23 @@ jobs:
             ${{ env.unityPackage }}
             ${{ env.packagePath }}/package.json
           tag_name: ${{ env.version }}
+
+      # Update source.json to reference the new release
+      - name: Update source.json
+        run: |
+          repo="${{ github.repository }}"
+          releaseUrl="https://github.com/${repo}/releases/download/${{ env.version }}/${{ env.zipFile }}"
+          jq --arg name "${{ env.packageName }}" --arg url "${releaseUrl}" \
+            '.githubRepos=[] | .packages=[{name: $name, releases: [$url]}]' \
+            source.json > source.json.tmp
+          mv source.json.tmp source.json
+
+      - name: Commit source.json update
+        run: |
+          if [ -n "$(git status --porcelain source.json)" ]; then
+            git config user.name "github-actions[bot]"
+            git config user.email "github-actions[bot]@users.noreply.github.com"
+            git add source.json
+            git commit -m "chore: update listing release"
+            git push
+          fi
