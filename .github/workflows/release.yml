@@ -48,7 +48,7 @@ jobs:
       - name: Track Package Files
         run: |
           find "${{ env.packagePath }}/Editor" -name \*.meta > metaList
-          printf "README.md\npackage.json\nLICENSE\n" >> metaList
+          if [ -f "README.md.meta" ]; then echo "README.md.meta" >> metaList; fi
       
       # Make a UnityPackage version of the Package for release
       - name: Create UnityPackage
