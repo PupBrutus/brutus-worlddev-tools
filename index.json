@@ -20,7 +20,8 @@
             "vrchat",
             "udon",
             "editor",
-            "tools"
+            "tools",
+            "unity"
           ],
           "vpmDependencies": {},
           "dependencies": {}
