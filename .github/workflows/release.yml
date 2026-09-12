@@ -31,13 +31,8 @@ jobs:
         id: version
         run: |
           currentVersion=$(jq -r '.version' "${{ env.packagePath }}/package.json")
-          IFS='.' read -r major minor patch <<< "${currentVersion}"
-          nextVersion="${major}.${minor}.$((patch + 1))"
-
-          jq --arg version "${nextVersion}" \
-            '.version = $version' \
-            "${{ env.packagePath }}/package.json" > "${{ env.packagePath }}/package.json.tmp"
-          mv "${{ env.packagePath }}/package.json.tmp" "${{ env.packagePath }}/package.json"
+          cd "${{ env.packagePath }}"
+          nextVersion=$(npm version patch --no-git-tag-version | sed 's/^v//')
 
           echo "previous=${currentVersion}" >> "$GITHUB_OUTPUT"
           echo "value=${nextVersion}" >> "$GITHUB_OUTPUT"
@@ -111,6 +106,8 @@ jobs:
             exit 0
           fi
           git commit -m "chore: release ${{ steps.version.outputs.value }} [skip ci]"
+          git fetch origin main
+          git rebase origin/main
           git tag -a "${{ steps.tag_check.outputs.tag_name }}" -m "Release ${{ steps.version.outputs.value }}"
           git push origin HEAD:main "${{ steps.tag_check.outputs.tag_name }}"
 
