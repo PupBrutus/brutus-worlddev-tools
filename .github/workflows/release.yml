@@ -37,19 +37,35 @@ jobs:
           echo "packageName=${packageName}" >> $GITHUB_ENV
           echo "zipFile=${packageName}-${{ steps.version.outputs.value }}.zip" >> $GITHUB_ENV
           echo "unityPackage=${packageName}-${{ steps.version.outputs.value }}.unitypackage" >> $GITHUB_ENV
-          echo "tagName=${{ steps.version.outputs.value }}" >> $GITHUB_ENV
           echo "version=${{ steps.version.outputs.value }}" >> $GITHUB_ENV
 
       - name: Check Existing Tag
         id: tag_check
         run: |
-          tagRefs=$(git ls-remote --tags origin "${{ env.tagName }}" | awk '{print $2}')
-          if printf '%s\n' "${tagRefs}" | grep -Fx "refs/tags/${{ env.tagName }}" > /dev/null || \
-             printf '%s\n' "${tagRefs}" | grep -Fx "refs/tags/${{ env.tagName }}^{}" > /dev/null; then
+          releaseTag="${{ env.version }}"
+          prefixedTag="v${{ env.version }}"
+          tagRefs=$(git ls-remote --tags origin "${releaseTag}" "${prefixedTag}" | awk '{print $2}')
+
+          if printf '%s\n' "${tagRefs}" | grep -Fx "refs/tags/${releaseTag}" > /dev/null || \
+             printf '%s\n' "${tagRefs}" | grep -Fx "refs/tags/${releaseTag}^{}" > /dev/null; then
+            tagName="${releaseTag}"
+            tagExists=true
             echo "exists=true" >> $GITHUB_OUTPUT
-            echo "Release tag ${{ env.tagName }} already exists; skipping package publishing."
+          elif printf '%s\n' "${tagRefs}" | grep -Fx "refs/tags/${prefixedTag}" > /dev/null || \
+               printf '%s\n' "${tagRefs}" | grep -Fx "refs/tags/${prefixedTag}^{}" > /dev/null; then
+            tagName="${prefixedTag}"
+            tagExists=true
+            echo "exists=true" >> $GITHUB_OUTPUT
           else
+            tagName="${releaseTag}"
+            tagExists=false
             echo "exists=false" >> $GITHUB_OUTPUT
+          fi
+
+          echo "tagName=${tagName}" >> $GITHUB_ENV
+
+          if [ "${tagExists}" = "true" ]; then
+            echo "Release tag ${tagName} already exists; skipping package publishing."
           fi
 
       # Zip the Package for release
