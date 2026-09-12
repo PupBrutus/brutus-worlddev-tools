@@ -119,16 +119,21 @@ jobs:
             exit 0
           fi
           git commit -m "chore: release ${{ steps.version.outputs.value }} [skip ci]"
-          if git ls-remote --tags origin "${{ steps.version.outputs.value }}" "v${{ steps.version.outputs.value }}" | grep -Eq "^refs/tags/(${{ steps.version.outputs.value }}|v${{ steps.version.outputs.value }})(\\^\\{\\})?$"; then
+          if git ls-remote --tags origin "${{ steps.version.outputs.value }}" "v${{ steps.version.outputs.value }}" | awk '{print $2}' | grep -Eq "^refs/tags/(${{ steps.version.outputs.value }}|v${{ steps.version.outputs.value }})(\\^\\{\\})?$"; then
             echo "Remote release tag for ${{ steps.version.outputs.value }} already exists; skipping publish."
+            echo "publish_release=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          git push origin HEAD:main
+          if git ls-remote --tags origin "${{ steps.version.outputs.value }}" "v${{ steps.version.outputs.value }}" | awk '{print $2}' | grep -Eq "^refs/tags/(${{ steps.version.outputs.value }}|v${{ steps.version.outputs.value }})(\\^\\{\\})?$"; then
+            echo "Remote release tag for ${{ steps.version.outputs.value }} already exists after branch push; skipping publish."
             echo "publish_release=false" >> "$GITHUB_OUTPUT"
             exit 0
           fi
           git tag -d "${{ steps.tag_check.outputs.tag_name }}" >/dev/null 2>&1 || true
           git tag -a "${{ steps.tag_check.outputs.tag_name }}" -m "Release ${{ steps.version.outputs.value }}"
-          git push origin HEAD:main
           if ! git push origin "${{ steps.tag_check.outputs.tag_name }}"; then
-            if git ls-remote --tags origin "${{ steps.version.outputs.value }}" "v${{ steps.version.outputs.value }}" | grep -Eq "^refs/tags/(${{ steps.version.outputs.value }}|v${{ steps.version.outputs.value }})(\\^\\{\\})?$"; then
+            if git ls-remote --tags origin "${{ steps.version.outputs.value }}" "v${{ steps.version.outputs.value }}" | awk '{print $2}' | grep -Eq "^refs/tags/(${{ steps.version.outputs.value }}|v${{ steps.version.outputs.value }})(\\^\\{\\})?$"; then
               echo "Remote release tag for ${{ steps.version.outputs.value }} already exists after branch push; skipping publish."
               echo "publish_release=false" >> "$GITHUB_OUTPUT"
               exit 0
