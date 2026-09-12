@@ -37,14 +37,15 @@ jobs:
           echo "packageName=${packageName}" >> $GITHUB_ENV
           echo "zipFile=${packageName}-${{ steps.version.outputs.value }}.zip" >> $GITHUB_ENV
           echo "unityPackage=${packageName}-${{ steps.version.outputs.value }}.unitypackage" >> $GITHUB_ENV
+          echo "tagName=${{ steps.version.outputs.value }}" >> $GITHUB_ENV
           echo "version=${{ steps.version.outputs.value }}" >> $GITHUB_ENV
 
       - name: Check Existing Tag
         id: tag_check
         run: |
-          if git ls-remote --tags origin "${{ env.version }}" | grep -Eq "refs/tags/${{ env.version }}(\\^\\{\\})?$"; then
+          if git ls-remote --tags origin "${{ env.tagName }}" | grep -Eq "refs/tags/${{ env.tagName }}(\\^\\{\\})?$"; then
             echo "exists=true" >> $GITHUB_OUTPUT
-            echo "Release tag ${{ env.version }} already exists; skipping package publishing."
+            echo "Release tag ${{ env.tagName }} already exists; skipping package publishing."
           else
             echo "exists=false" >> $GITHUB_OUTPUT
           fi
@@ -76,7 +77,7 @@ jobs:
         if: steps.tag_check.outputs.exists != 'true'
         uses: rickstaa/action-create-tag@88dbf7ff6fe2405f8e8f6c6fdfd78829bc631f83
         with:
-          tag: "${{ env.version }}"
+          tag: "${{ env.tagName }}"
       
       # Publish the Release to GitHub
       - name: Make Release
@@ -87,13 +88,13 @@ jobs:
             ${{ env.zipFile }}
             ${{ env.unityPackage }}
             ${{ env.packagePath }}/package.json
-          tag_name: ${{ env.version }}
+          tag_name: ${{ env.tagName }}
 
       # Update source.json to reference the new release
       - name: Update source.json
         run: |
           repo="${{ github.repository }}"
-          releaseUrl="https://github.com/${repo}/releases/download/${{ env.version }}/${{ env.zipFile }}"
+          releaseUrl="https://github.com/${repo}/releases/download/${{ env.tagName }}/${{ env.zipFile }}"
           jq --arg name "${{ env.packageName }}" --arg url "${releaseUrl}" \
             '.githubRepos=[] | .packages=[{name: $name, releases: [$url]}]' \
             source.json > source.json.tmp
