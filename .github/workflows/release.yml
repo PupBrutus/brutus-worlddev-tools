@@ -39,19 +39,32 @@ jobs:
           echo "unityPackage=${packageName}-${{ steps.version.outputs.value }}.unitypackage" >> $GITHUB_ENV
           echo "version=${{ steps.version.outputs.value }}" >> $GITHUB_ENV
 
+      - name: Check Existing Tag
+        id: tag_check
+        run: |
+          if git ls-remote --tags --exit-code origin "refs/tags/${{ env.version }}" > /dev/null 2>&1; then
+            echo "exists=true" >> $GITHUB_OUTPUT
+            echo "Release tag ${{ env.version }} already exists; skipping package publishing."
+          else
+            echo "exists=false" >> $GITHUB_OUTPUT
+          fi
+
       # Zip the Package for release
       - name: Create Package Zip
+        if: steps.tag_check.outputs.exists != 'true'
         run: |
           zip -r "${{ github.workspace }}/${{ env.zipFile }}" Editor README.md package.json LICENSE
       
       # Build a list of files for the UnityPackage
       - name: Track Package Files
+        if: steps.tag_check.outputs.exists != 'true'
         run: |
           find "${{ env.packagePath }}/Editor" -name \*.meta > metaList
           if [ -f "README.md.meta" ]; then echo "README.md.meta" >> metaList; fi
       
       # Make a UnityPackage version of the Package for release
       - name: Create UnityPackage
+        if: steps.tag_check.outputs.exists != 'true'
         uses: pCYSl5EDgo/create-unitypackage@v1.2.3
         with:
           package-path: ${{ env.unityPackage }}
@@ -60,12 +73,14 @@ jobs:
       # Make a release tag of the version from the package.json file 
       - name: Create Tag
         id: tag_version
+        if: steps.tag_check.outputs.exists != 'true'
         uses: rickstaa/action-create-tag@88dbf7ff6fe2405f8e8f6c6fdfd78829bc631f83
         with:
           tag: "${{ env.version }}"
       
       # Publish the Release to GitHub
       - name: Make Release
+        if: steps.tag_check.outputs.exists != 'true'
         uses: softprops/action-gh-release@de2c0eb89ae2a093876385947365aca7b0e5f844
         with:
           files: |
