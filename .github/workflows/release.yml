@@ -11,7 +11,7 @@ concurrency:
 
 jobs:
   build:
-    if: github.event_name != 'push' || !contains(github.event.head_commit.message, '[skip ci]')
+    if: github.event_name != 'push' || github.event.head_commit.committer.name != 'github-actions[bot]'
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -42,20 +42,21 @@ jobs:
           echo "previous=${currentVersion}" >> "$GITHUB_OUTPUT"
           echo "value=${nextVersion}" >> "$GITHUB_OUTPUT"
     
-      # Configure the Environment Variables needed for releasing the Package
-      - name: Set Environment Variables
+      # Configure the release metadata needed for publishing the package
+      - name: Set Release Metadata
+        id: release_meta
         run: |
           packageName=$(jq -r '.name' "${{ env.packagePath }}/package.json")
-          echo "packageName=${packageName}" >> $GITHUB_ENV
-          echo "zipFile=${packageName}-${{ steps.version.outputs.value }}.zip" >> $GITHUB_ENV
-          echo "unityPackage=${packageName}-${{ steps.version.outputs.value }}.unitypackage" >> $GITHUB_ENV
-          echo "version=${{ steps.version.outputs.value }}" >> $GITHUB_ENV
+          echo "package_name=${packageName}" >> "$GITHUB_OUTPUT"
+          echo "zip_file=${packageName}-${{ steps.version.outputs.value }}.zip" >> "$GITHUB_OUTPUT"
+          echo "unity_package=${packageName}-${{ steps.version.outputs.value }}.unitypackage" >> "$GITHUB_OUTPUT"
+          echo "version=${{ steps.version.outputs.value }}" >> "$GITHUB_OUTPUT"
 
       - name: Check Existing Tag
         id: tag_check
         run: |
-          releaseTag="${{ env.version }}"
-          prefixedTag="v${{ env.version }}"
+          releaseTag="${{ steps.release_meta.outputs.version }}"
+          prefixedTag="v${{ steps.release_meta.outputs.version }}"
           tagRefs=$(git ls-remote --tags origin "${releaseTag}" "${prefixedTag}" | awk '{print $2}')
 
           if printf '%s\n' "${tagRefs}" | grep -Fx "refs/tags/${releaseTag}" > /dev/null || \
@@ -85,8 +86,8 @@ jobs:
         if: steps.tag_check.outputs.exists != 'true'
         run: |
           repo="${{ github.repository }}"
-          releaseUrl="https://github.com/${repo}/releases/download/${{ steps.tag_check.outputs.tag_name }}/${{ env.zipFile }}"
-          jq --arg name "${{ env.packageName }}" --arg url "${releaseUrl}" \
+          releaseUrl="https://github.com/${repo}/releases/download/${{ steps.tag_check.outputs.tag_name }}/${{ steps.release_meta.outputs.zip_file }}"
+          jq --arg name "${{ steps.release_meta.outputs.package_name }}" --arg url "${releaseUrl}" \
             '.packages = (
               (.packages // [])
               | if any(.[]?; .name == $name) then
@@ -117,7 +118,8 @@ jobs:
       - name: Create Package Zip
         if: steps.tag_check.outputs.exists != 'true'
         run: |
-          zip -r "${{ github.workspace }}/${{ env.zipFile }}" Editor README.md "${{ env.packagePath }}/package.json" LICENSE
+          cd "${{ env.packagePath }}"
+          zip -r "${{ github.workspace }}/${{ steps.release_meta.outputs.zip_file }}" Editor README.md package.json LICENSE
       
       # Build a list of files for the UnityPackage
       - name: Track Package Files
@@ -131,7 +133,7 @@ jobs:
         if: steps.tag_check.outputs.exists != 'true'
         uses: pCYSl5EDgo/create-unitypackage@v1.2.3
         with:
-          package-path: ${{ env.unityPackage }}
+          package-path: ${{ steps.release_meta.outputs.unity_package }}
           include-files: metaList
       
       # Publish the Release to GitHub
@@ -140,7 +142,7 @@ jobs:
         uses: softprops/action-gh-release@de2c0eb89ae2a093876385947365aca7b0e5f844
         with:
           files: |
-            ${{ env.zipFile }}
-            ${{ env.unityPackage }}
+            ${{ steps.release_meta.outputs.zip_file }}
+            ${{ steps.release_meta.outputs.unity_package }}
             ${{ env.packagePath }}/package.json
           tag_name: ${{ steps.tag_check.outputs.tag_name }}
