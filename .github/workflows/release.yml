@@ -4,13 +4,14 @@ on:
   workflow_dispatch:
   push:
     branches: [main]
-    paths:
-      - "Editor/**"
-      - "package.json"
-      - ".github/workflows/release.yml"
+
+concurrency:
+  group: build-release-${{ github.ref }}
+  cancel-in-progress: false
 
 jobs:
   build:
+    if: github.event_name != 'push' || !contains(github.event.head_commit.message, '[skip ci]')
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -21,109 +22,155 @@ jobs:
       # Checkout Local Repository
       - name: Checkout
         uses: actions/checkout@3df4ab11eba7bda6032a0b82a6bb43b11571feac
+        with:
+          fetch-depth: 0
+          ref: ${{ github.ref }}
 
-      # Get the Package version based on the package.json file
-      - name: Get Version
+      - name: Sync Main Branch
+        run: |
+          git fetch origin main
+          git reset --hard origin/main
+
+      # Increment the Package version based on the package.json file
+      - name: Bump Version
         id: version
-        uses: zoexx/github-action-json-file-properties@b9f36ce6ee6fe2680cd3c32b2c62e22eade7e590
-        with: 
-          file_path: "${{ env.packagePath }}/package.json"
-          prop_path: "version"
+        run: |
+          currentVersion=$(jq -r '.version' "${{ env.packagePath }}/package.json")
+          cd "${{ env.packagePath }}"
+          nextVersion=$(npm version patch --no-git-tag-version | sed 's/^v//')
+
+          echo "previous=${currentVersion}" >> "$GITHUB_OUTPUT"
+          echo "value=${nextVersion}" >> "$GITHUB_OUTPUT"
     
-      # Configure the Environment Variables needed for releasing the Package
-      - name: Set Environment Variables
+      # Configure the release metadata needed for publishing the package
+      - name: Set Release Metadata
+        id: release_meta
         run: |
           packageName=$(jq -r '.name' "${{ env.packagePath }}/package.json")
-          echo "packageName=${packageName}" >> $GITHUB_ENV
-          echo "zipFile=${packageName}-${{ steps.version.outputs.value }}.zip" >> $GITHUB_ENV
-          echo "unityPackage=${packageName}-${{ steps.version.outputs.value }}.unitypackage" >> $GITHUB_ENV
-          echo "version=${{ steps.version.outputs.value }}" >> $GITHUB_ENV
+          echo "package_name=${packageName}" >> "$GITHUB_OUTPUT"
+          echo "zip_file=${packageName}-${{ steps.version.outputs.value }}.zip" >> "$GITHUB_OUTPUT"
+          echo "unity_package=${packageName}-${{ steps.version.outputs.value }}.unitypackage" >> "$GITHUB_OUTPUT"
+          echo "version=${{ steps.version.outputs.value }}" >> "$GITHUB_OUTPUT"
 
       - name: Check Existing Tag
         id: tag_check
         run: |
-          releaseTag="${{ env.version }}"
-          prefixedTag="v${{ env.version }}"
+          releaseTag="${{ steps.release_meta.outputs.version }}"
+          prefixedTag="v${{ steps.release_meta.outputs.version }}"
+          tagName="${releaseTag}"
+          tagExists=false
           tagRefs=$(git ls-remote --tags origin "${releaseTag}" "${prefixedTag}" | awk '{print $2}')
 
-          if printf '%s\n' "${tagRefs}" | grep -Fx "refs/tags/${releaseTag}" > /dev/null || \
-             printf '%s\n' "${tagRefs}" | grep -Fx "refs/tags/${releaseTag}^{}" > /dev/null; then
-            tagName="${releaseTag}"
+          if printf '%s\n' "${tagRefs}" | grep -Eq "^refs/tags/${releaseTag}(\\^\\{\\})?$"; then
             tagExists=true
-            echo "exists=true" >> $GITHUB_OUTPUT
-          elif printf '%s\n' "${tagRefs}" | grep -Fx "refs/tags/${prefixedTag}" > /dev/null || \
-               printf '%s\n' "${tagRefs}" | grep -Fx "refs/tags/${prefixedTag}^{}" > /dev/null; then
+            tagName="${releaseTag}"
+          elif printf '%s\n' "${tagRefs}" | grep -Eq "^refs/tags/${prefixedTag}(\\^\\{\\})?$"; then
+            tagExists=true
             tagName="${prefixedTag}"
-            tagExists=true
-            echo "exists=true" >> $GITHUB_OUTPUT
-          else
-            tagName="${releaseTag}"
-            tagExists=false
-            echo "exists=false" >> $GITHUB_OUTPUT
           fi
 
-          echo "tagName=${tagName}" >> $GITHUB_ENV
+          if [ "${tagExists}" = "true" ]; then
+            echo "exists=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "exists=false" >> "$GITHUB_OUTPUT"
+          fi
+
+          echo "tag_name=${tagName}" >> "$GITHUB_OUTPUT"
 
           if [ "${tagExists}" = "true" ]; then
             echo "Release tag ${tagName} already exists; skipping package publishing."
           fi
 
-      # Zip the Package for release
-      - name: Create Package Zip
-        if: steps.tag_check.outputs.exists != 'true'
-        run: |
-          zip -r "${{ github.workspace }}/${{ env.zipFile }}" Editor README.md package.json LICENSE
-      
-      # Build a list of files for the UnityPackage
-      - name: Track Package Files
-        if: steps.tag_check.outputs.exists != 'true'
-        run: |
-          find "${{ env.packagePath }}/Editor" -name \*.meta > metaList
-          if [ -f "README.md.meta" ]; then echo "README.md.meta" >> metaList; fi
-      
-      # Make a UnityPackage version of the Package for release
-      - name: Create UnityPackage
-        if: steps.tag_check.outputs.exists != 'true'
-        uses: pCYSl5EDgo/create-unitypackage@v1.2.3
-        with:
-          package-path: ${{ env.unityPackage }}
-          include-files: metaList
-      
-      # Make a release tag of the version from the package.json file 
-      - name: Create Tag
-        id: tag_version
-        if: steps.tag_check.outputs.exists != 'true'
-        uses: rickstaa/action-create-tag@88dbf7ff6fe2405f8e8f6c6fdfd78829bc631f83
-        with:
-          tag: "${{ env.tagName }}"
-      
-      # Publish the Release to GitHub
-      - name: Make Release
-        if: steps.tag_check.outputs.exists != 'true'
-        uses: softprops/action-gh-release@de2c0eb89ae2a093876385947365aca7b0e5f844
-        with:
-          files: |
-            ${{ env.zipFile }}
-            ${{ env.unityPackage }}
-            ${{ env.packagePath }}/package.json
-          tag_name: ${{ env.tagName }}
-
       # Update source.json to reference the new release
       - name: Update source.json
+        if: steps.tag_check.outputs.exists != 'true'
         run: |
           repo="${{ github.repository }}"
-          releaseUrl="https://github.com/${repo}/releases/download/${{ env.tagName }}/${{ env.zipFile }}"
-          jq --arg name "${{ env.packageName }}" --arg url "${releaseUrl}" \
-            '.githubRepos=[] | .packages=[{name: $name, releases: [$url]}]' \
+          releaseUrl="https://github.com/${repo}/releases/download/${{ steps.tag_check.outputs.tag_name }}/${{ steps.release_meta.outputs.zip_file }}"
+          jq --arg name "${{ steps.release_meta.outputs.package_name }}" --arg url "${releaseUrl}" \
+            '.packages = (
+              (.packages // [])
+              | if any(.[]?; .name == $name) then
+                  map(
+                    if .name == $name then
+                      . + {releases: ([$url] + ((.releases // []) | map(select(. != $url))))}
+                    else
+                      .
+                    end
+                  )
+                else
+                  . + [{name: $name, releases: [$url]}]
+                end
+            )' \
             source.json > source.json.tmp
           mv source.json.tmp source.json
 
-      - name: Commit source.json update
+      # Commit the new version metadata
+      - name: Commit Release Metadata
+        id: release_commit
+        if: steps.tag_check.outputs.exists != 'true'
         run: |
-          if [ -n "$(git status --porcelain source.json)" ]; then
-            git config user.name "github-actions[bot]"
-            git config user.email "github-actions[bot]@users.noreply.github.com"
-            git add source.json
-            git commit -m "chore: update listing release"
-            git push
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add "${{ env.packagePath }}/package.json" source.json
+          if git diff --cached --quiet; then
+            echo "No metadata changes to commit."
+            echo "publish_release=false" >> "$GITHUB_OUTPUT"
+            exit 0
           fi
+          git commit -m "chore: release ${{ steps.version.outputs.value }} [skip ci]"
+          if git ls-remote --tags origin "${{ steps.version.outputs.value }}" "v${{ steps.version.outputs.value }}" | awk '{print $2}' | grep -Eq "^refs/tags/(${{ steps.version.outputs.value }}|v${{ steps.version.outputs.value }})(\\^\\{\\})?$"; then
+            echo "Remote release tag for ${{ steps.version.outputs.value }} already exists; skipping publish."
+            echo "publish_release=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          git push origin HEAD:main
+          if git ls-remote --tags origin "${{ steps.version.outputs.value }}" "v${{ steps.version.outputs.value }}" | awk '{print $2}' | grep -Eq "^refs/tags/(${{ steps.version.outputs.value }}|v${{ steps.version.outputs.value }})(\\^\\{\\})?$"; then
+            echo "Remote release tag for ${{ steps.version.outputs.value }} already exists after branch push; skipping publish."
+            echo "publish_release=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          git tag -d "${{ steps.tag_check.outputs.tag_name }}" >/dev/null 2>&1 || true
+          git tag -a "${{ steps.tag_check.outputs.tag_name }}" -m "Release ${{ steps.version.outputs.value }}"
+          if ! git push origin "${{ steps.tag_check.outputs.tag_name }}"; then
+            if git ls-remote --tags origin "${{ steps.version.outputs.value }}" "v${{ steps.version.outputs.value }}" | awk '{print $2}' | grep -Eq "^refs/tags/(${{ steps.version.outputs.value }}|v${{ steps.version.outputs.value }})(\\^\\{\\})?$"; then
+              echo "Remote release tag for ${{ steps.version.outputs.value }} already exists after branch push; skipping publish."
+              echo "publish_release=false" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+            exit 1
+          fi
+          echo "publish_release=true" >> "$GITHUB_OUTPUT"
+
+      # Zip the Package for release
+      - name: Create Package Zip
+        if: steps.tag_check.outputs.exists != 'true' && steps.release_commit.outputs.publish_release != 'false'
+        run: |
+          cd "${{ env.packagePath }}"
+          zip -r "${{ github.workspace }}/${{ steps.release_meta.outputs.zip_file }}" Editor README.md package.json LICENSE
+      
+      # Build a list of files for the UnityPackage
+      - name: Track Package Files
+        if: steps.tag_check.outputs.exists != 'true' && steps.release_commit.outputs.publish_release != 'false'
+        run: |
+          find "${{ env.packagePath }}/Editor" -name \*.meta > metaList
+          if [ -f "${{ env.packagePath }}/README.md.meta" ]; then echo "${{ env.packagePath }}/README.md.meta" >> metaList; fi
+      
+      # Make a UnityPackage version of the Package for release
+      - name: Create UnityPackage
+        if: steps.tag_check.outputs.exists != 'true' && steps.release_commit.outputs.publish_release != 'false'
+        uses: pCYSl5EDgo/create-unitypackage@v1.2.3
+        with:
+          package-path: ${{ steps.release_meta.outputs.unity_package }}
+          include-files: metaList
+      
+      # Publish the Release to GitHub
+      - name: Make Release
+        if: steps.tag_check.outputs.exists != 'true' && steps.release_commit.outputs.publish_release != 'false'
+        uses: softprops/action-gh-release@de2c0eb89ae2a093876385947365aca7b0e5f844
+        with:
+          files: |
+            ${{ steps.release_meta.outputs.zip_file }}
+            ${{ steps.release_meta.outputs.unity_package }}
+            ${{ env.packagePath }}/package.json
+          tag_name: ${{ steps.tag_check.outputs.tag_name }}
