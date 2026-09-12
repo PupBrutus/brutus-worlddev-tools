@@ -112,7 +112,15 @@ jobs:
             exit 0
           fi
           git tag -a "${{ steps.tag_check.outputs.tag_name }}" -m "Release ${{ steps.version.outputs.value }}"
-          git push origin HEAD:main "${{ steps.tag_check.outputs.tag_name }}"
+          git push origin HEAD:main
+          if ! git push origin "${{ steps.tag_check.outputs.tag_name }}"; then
+            if git ls-remote --tags origin "${{ steps.tag_check.outputs.tag_name }}" | grep -Eq "refs/tags/${{ steps.tag_check.outputs.tag_name }}(\\^\\{\\})?$"; then
+              echo "Remote tag ${{ steps.tag_check.outputs.tag_name }} already exists after branch push; skipping publish."
+              echo "publish_release=false" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+            exit 1
+          fi
           echo "publish_release=true" >> "$GITHUB_OUTPUT"
 
       # Zip the Package for release
