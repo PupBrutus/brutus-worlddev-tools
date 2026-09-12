@@ -39,8 +39,8 @@ jobs:
             "${{ env.packagePath }}/package.json" > "${{ env.packagePath }}/package.json.tmp"
           mv "${{ env.packagePath }}/package.json.tmp" "${{ env.packagePath }}/package.json"
 
-          echo "previous=${currentVersion}" >> $GITHUB_OUTPUT
-          echo "value=${nextVersion}" >> $GITHUB_OUTPUT
+          echo "previous=${currentVersion}" >> "$GITHUB_OUTPUT"
+          echo "value=${nextVersion}" >> "$GITHUB_OUTPUT"
     
       # Configure the Environment Variables needed for releasing the Package
       - name: Set Environment Variables
@@ -62,16 +62,16 @@ jobs:
              printf '%s\n' "${tagRefs}" | grep -Fx "refs/tags/${releaseTag}^{}" > /dev/null; then
             tagName="${releaseTag}"
             tagExists=true
-            echo "exists=true" >> $GITHUB_OUTPUT
+            echo "exists=true" >> "$GITHUB_OUTPUT"
           elif printf '%s\n' "${tagRefs}" | grep -Fx "refs/tags/${prefixedTag}" > /dev/null || \
                printf '%s\n' "${tagRefs}" | grep -Fx "refs/tags/${prefixedTag}^{}" > /dev/null; then
             tagName="${prefixedTag}"
             tagExists=true
-            echo "exists=true" >> $GITHUB_OUTPUT
+            echo "exists=true" >> "$GITHUB_OUTPUT"
           else
             tagName="${releaseTag}"
             tagExists=false
-            echo "exists=false" >> $GITHUB_OUTPUT
+            echo "exists=false" >> "$GITHUB_OUTPUT"
           fi
 
           echo "tagName=${tagName}" >> $GITHUB_ENV
@@ -131,14 +131,8 @@ jobs:
             exit 0
           fi
           git commit -m "chore: release ${{ steps.version.outputs.value }} [skip ci]"
-          git push
-
-      # Make a release tag of the version from the package.json file
-      - name: Create Tag
-        if: steps.tag_check.outputs.exists != 'true'
-        run: |
-          git tag "${{ env.tagName }}"
-          git push origin "${{ env.tagName }}"
+          git tag -a "${{ env.tagName }}" -m "Release ${{ steps.version.outputs.value }}"
+          git push origin HEAD:main "${{ env.tagName }}"
       
       # Publish the Release to GitHub
       - name: Make Release
