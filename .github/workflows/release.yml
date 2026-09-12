@@ -42,7 +42,7 @@ jobs:
       - name: Check Existing Tag
         id: tag_check
         run: |
-          if git ls-remote --tags --exit-code origin "refs/tags/${{ env.version }}" > /dev/null 2>&1; then
+          if git ls-remote --tags origin "${{ env.version }}" | grep -Eq "refs/tags/${{ env.version }}(\\^\\{\\})?$"; then
             echo "exists=true" >> $GITHUB_OUTPUT
             echo "Release tag ${{ env.version }} already exists; skipping package publishing."
           else
