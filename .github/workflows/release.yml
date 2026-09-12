@@ -26,6 +26,11 @@ jobs:
           fetch-depth: 0
           ref: ${{ github.ref }}
 
+      - name: Sync Main Branch
+        run: |
+          git fetch origin main
+          git reset --hard origin/main
+
       # Increment the Package version based on the package.json file
       - name: Bump Version
         id: version
@@ -56,8 +61,12 @@ jobs:
           tagExists=false
           tagRefs=$(git ls-remote --tags origin "${releaseTag}" "${prefixedTag}" | awk '{print $2}')
 
-          if printf '%s\n' "${tagRefs}" | grep -Eq "^refs/tags/(${releaseTag}|${prefixedTag})(\\^\\{\\})?$"; then
+          if printf '%s\n' "${tagRefs}" | grep -Eq "^refs/tags/${releaseTag}(\\^\\{\\})?$"; then
             tagExists=true
+            tagName="${releaseTag}"
+          elif printf '%s\n' "${tagRefs}" | grep -Eq "^refs/tags/${prefixedTag}(\\^\\{\\})?$"; then
+            tagExists=true
+            tagName="${prefixedTag}"
           fi
 
           if [ "${tagExists}" = "true" ]; then
@@ -110,10 +119,8 @@ jobs:
             exit 0
           fi
           git commit -m "chore: release ${{ steps.version.outputs.value }} [skip ci]"
-          git fetch origin main
-          git rebase origin/main
-          if git ls-remote --tags origin "${{ steps.tag_check.outputs.tag_name }}" | grep -Eq "refs/tags/${{ steps.tag_check.outputs.tag_name }}(\\^\\{\\})?$"; then
-            echo "Remote tag ${{ steps.tag_check.outputs.tag_name }} already exists; skipping publish."
+          if git ls-remote --tags origin "${{ steps.version.outputs.value }}" "v${{ steps.version.outputs.value }}" | grep -Eq "^refs/tags/(${{ steps.version.outputs.value }}|v${{ steps.version.outputs.value }})(\\^\\{\\})?$"; then
+            echo "Remote release tag for ${{ steps.version.outputs.value }} already exists; skipping publish."
             echo "publish_release=false" >> "$GITHUB_OUTPUT"
             exit 0
           fi
@@ -121,8 +128,8 @@ jobs:
           git tag -a "${{ steps.tag_check.outputs.tag_name }}" -m "Release ${{ steps.version.outputs.value }}"
           git push origin HEAD:main
           if ! git push origin "${{ steps.tag_check.outputs.tag_name }}"; then
-            if git ls-remote --tags origin "${{ steps.tag_check.outputs.tag_name }}" | grep -Eq "refs/tags/${{ steps.tag_check.outputs.tag_name }}(\\^\\{\\})?$"; then
-              echo "Remote tag ${{ steps.tag_check.outputs.tag_name }} already exists after branch push; skipping publish."
+            if git ls-remote --tags origin "${{ steps.version.outputs.value }}" "v${{ steps.version.outputs.value }}" | grep -Eq "^refs/tags/(${{ steps.version.outputs.value }}|v${{ steps.version.outputs.value }})(\\^\\{\\})?$"; then
+              echo "Remote release tag for ${{ steps.version.outputs.value }} already exists after branch push; skipping publish."
               echo "publish_release=false" >> "$GITHUB_OUTPUT"
               exit 0
             fi
