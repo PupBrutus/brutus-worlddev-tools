@@ -43,7 +43,9 @@ jobs:
       - name: Check Existing Tag
         id: tag_check
         run: |
-          if git ls-remote --tags origin "${{ env.tagName }}" | grep -Eq "refs/tags/${{ env.tagName }}(\\^\\{\\})?$"; then
+          tagRefs=$(git ls-remote --tags origin "${{ env.tagName }}" | awk '{print $2}')
+          if printf '%s\n' "${tagRefs}" | grep -Fx "refs/tags/${{ env.tagName }}" > /dev/null || \
+             printf '%s\n' "${tagRefs}" | grep -Fx "refs/tags/${{ env.tagName }}^{}" > /dev/null; then
             echo "exists=true" >> $GITHUB_OUTPUT
             echo "Release tag ${{ env.tagName }} already exists; skipping package publishing."
           else
