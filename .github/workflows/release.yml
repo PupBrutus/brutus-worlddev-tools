@@ -82,7 +82,13 @@ jobs:
             '.packages = (
               (.packages // [])
               | if any(.[]?; .name == $name) then
-                  map(if .name == $name then . + {releases: [$url]} else . end)
+                  map(
+                    if .name == $name then
+                      . + {releases: ([$url] + ((.releases // []) | map(select(. != $url))))}
+                    else
+                      .
+                    end
+                  )
                 else
                   . + [{name: $name, releases: [$url]}]
                 end
@@ -111,6 +117,7 @@ jobs:
             echo "publish_release=false" >> "$GITHUB_OUTPUT"
             exit 0
           fi
+          git tag -d "${{ steps.tag_check.outputs.tag_name }}" >/dev/null 2>&1 || true
           git tag -a "${{ steps.tag_check.outputs.tag_name }}" -m "Release ${{ steps.version.outputs.value }}"
           git push origin HEAD:main
           if ! git push origin "${{ steps.tag_check.outputs.tag_name }}"; then
