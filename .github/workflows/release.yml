@@ -11,7 +11,7 @@ concurrency:
 
 jobs:
   build:
-    if: github.event_name != 'push' || github.event.head_commit.committer.name != 'github-actions[bot]'
+    if: github.event_name != 'push' || !contains(github.event.head_commit.message, '[skip ci]')
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -96,6 +96,7 @@ jobs:
 
       # Commit the new version metadata
       - name: Commit Release Metadata
+        id: release_commit
         if: steps.tag_check.outputs.exists != 'true'
         run: |
           git config user.name "github-actions[bot]"
@@ -103,31 +104,38 @@ jobs:
           git add "${{ env.packagePath }}/package.json" source.json
           if git diff --cached --quiet; then
             echo "No metadata changes to commit."
+            echo "publish_release=false" >> "$GITHUB_OUTPUT"
             exit 0
           fi
           git commit -m "chore: release ${{ steps.version.outputs.value }} [skip ci]"
           git fetch origin main
           git rebase origin/main
+          if git ls-remote --tags origin "${{ steps.tag_check.outputs.tag_name }}" | grep -Eq "refs/tags/${{ steps.tag_check.outputs.tag_name }}(\\^\\{\\})?$"; then
+            echo "Remote tag ${{ steps.tag_check.outputs.tag_name }} already exists; skipping publish."
+            echo "publish_release=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
           git tag -a "${{ steps.tag_check.outputs.tag_name }}" -m "Release ${{ steps.version.outputs.value }}"
           git push origin HEAD:main "${{ steps.tag_check.outputs.tag_name }}"
+          echo "publish_release=true" >> "$GITHUB_OUTPUT"
 
       # Zip the Package for release
       - name: Create Package Zip
-        if: steps.tag_check.outputs.exists != 'true'
+        if: steps.tag_check.outputs.exists != 'true' && steps.release_commit.outputs.publish_release != 'false'
         run: |
           cd "${{ env.packagePath }}"
           zip -r "${{ github.workspace }}/${{ steps.release_meta.outputs.zip_file }}" Editor README.md package.json LICENSE
       
       # Build a list of files for the UnityPackage
       - name: Track Package Files
-        if: steps.tag_check.outputs.exists != 'true'
+        if: steps.tag_check.outputs.exists != 'true' && steps.release_commit.outputs.publish_release != 'false'
         run: |
           find "${{ env.packagePath }}/Editor" -name \*.meta > metaList
           if [ -f "README.md.meta" ]; then echo "README.md.meta" >> metaList; fi
       
       # Make a UnityPackage version of the Package for release
       - name: Create UnityPackage
-        if: steps.tag_check.outputs.exists != 'true'
+        if: steps.tag_check.outputs.exists != 'true' && steps.release_commit.outputs.publish_release != 'false'
         uses: pCYSl5EDgo/create-unitypackage@v1.2.3
         with:
           package-path: ${{ steps.release_meta.outputs.unity_package }}
@@ -135,7 +143,7 @@ jobs:
       
       # Publish the Release to GitHub
       - name: Make Release
-        if: steps.tag_check.outputs.exists != 'true'
+        if: steps.tag_check.outputs.exists != 'true' && steps.release_commit.outputs.publish_release != 'false'
         uses: softprops/action-gh-release@de2c0eb89ae2a093876385947365aca7b0e5f844
         with:
           files: |
