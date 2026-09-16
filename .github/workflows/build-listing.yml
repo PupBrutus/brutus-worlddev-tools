@@ -1,10 +1,9 @@
 name: Build Repo Listing
 
-on: 
+# Chained automatically after "Build Release"; this trigger is for manually
+# rebuilding the listing without cutting a new release.
+on:
   workflow_dispatch:
-  push:
-    branches: main
-    paths: source.json
 
 # Sets permissions of the GITHUB_TOKEN to allow deployment to GitHub Pages
 permissions:

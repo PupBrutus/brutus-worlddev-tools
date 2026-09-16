@@ -37,6 +37,15 @@ namespace DoggoBrutus.WorldDev.Editor
         private Vector2 windowScrollPosition;
         private Vector2 scrollPosition;
 
+        // Texture import fixer state
+        private TextureImportDefaults importDefaults;
+        private bool showImportDefaults = false;
+        private bool showDefaultPreset = false;
+        private bool showStandalonePreset = false;
+        private bool showAndroidPreset = false;
+        private static readonly int[] maxSizeValues = { 32, 64, 128, 256, 512, 1024, 2048, 4096, 8192 };
+        private static readonly string[] maxSizeLabels = { "32", "64", "128", "256", "512", "1024", "2048", "4096", "8192" };
+
         private List<ShaderGroup> shaderGroups = new List<ShaderGroup>();
         private Dictionary<Material, MaterialUsage> materialUsage = new Dictionary<Material, MaterialUsage>();
         private Dictionary<Texture, TextureUsage> textureUsage = new Dictionary<Texture, TextureUsage>();
@@ -72,6 +81,8 @@ namespace DoggoBrutus.WorldDev.Editor
             public bool isCompressed;
             public bool isPowerOfTwo;
             public long memoryBytes;
+            public string assetPath;
+            public bool isImportable;   // backed by a TextureImporter asset
             public int usageCount = 0;   // number of material slots referencing it
             public List<Material> usedByMaterials = new List<Material>();
         }
@@ -88,6 +99,11 @@ namespace DoggoBrutus.WorldDev.Editor
         {
             MaterialAnalyzer window = GetWindow<MaterialAnalyzer>("Material Analyzer");
             window.Show();
+        }
+
+        private void OnEnable()
+        {
+            EnsureImportDefaultsLoaded();
         }
 
         private void OnGUI()
@@ -199,6 +215,8 @@ namespace DoggoBrutus.WorldDev.Editor
             EditorGUILayout.LabelField("Textures by Memory Footprint:", EditorStyles.boldLabel);
             EditorGUILayout.HelpBox("VRAM estimated from the runtime memory profiler (accounts for format, resolution and mipmaps). Deduplicated \u2014 a shared texture is counted once.", MessageType.Info);
 
+            DrawImportDefaultsSection();
+
             EditorGUILayout.BeginVertical("box");
             EditorGUILayout.LabelField("Deduplicated VRAM:", FormatBytes(uniqueTextureMemory), EditorStyles.boldLabel);
             EditorGUILayout.LabelField("If Not Shared:", FormatBytes(summedTextureMemory));
@@ -213,6 +231,7 @@ namespace DoggoBrutus.WorldDev.Editor
 
             scrollPosition = EditorGUILayout.BeginScrollView(scrollPosition, GUILayout.Height(380));
 
+            TextureUsage pendingFix = null;
             foreach (TextureUsage tex in sortedTextures)
             {
                 EditorGUILayout.BeginVertical("box");
@@ -240,10 +259,120 @@ namespace DoggoBrutus.WorldDev.Editor
                 }
                 EditorGUILayout.EndHorizontal();
 
+                EditorGUILayout.BeginHorizontal();
+                if (tex.isImportable)
+                {
+                    using (new EditorGUI.DisabledScope(importDefaults == null))
+                    {
+                        if (GUILayout.Button("Fix Import Settings", GUILayout.Width(160)))
+                        {
+                            pendingFix = tex;
+                        }
+                    }
+                    EditorGUILayout.LabelField(tex.assetPath, EditorStyles.miniLabel, GUILayout.ExpandWidth(true));
+                }
+                else
+                {
+                    EditorGUILayout.LabelField("Built-in / non-asset texture (not importable)", EditorStyles.miniLabel);
+                }
+                EditorGUILayout.EndHorizontal();
+
                 EditorGUILayout.EndVertical();
             }
 
             EditorGUILayout.EndScrollView();
+
+            // Applied after the loop so it doesn't mutate sortedTextures mid-iteration.
+            if (pendingFix != null)
+            {
+                ApplyImportSettings(pendingFix);
+            }
+        }
+
+        private void DrawImportDefaultsSection()
+        {
+            EditorGUILayout.BeginVertical("box");
+            showImportDefaults = EditorGUILayout.Foldout(showImportDefaults, "Texture Import Defaults (Fixer)", true);
+            if (showImportDefaults)
+            {
+                EditorGUILayout.HelpBox(
+                    "VRChat guidance: keep textures small and compressed. Aim for <= 1024 on Android/Quest. " +
+                    "Crunch compression only reduces DOWNLOAD size (not VRAM) and can break across Unity versions \u2014 " +
+                    "your package should fit the size limits without it.",
+                    MessageType.Info);
+
+                importDefaults = (TextureImportDefaults)EditorGUILayout.ObjectField(
+                    "Defaults Asset", importDefaults, typeof(TextureImportDefaults), false);
+
+                if (importDefaults == null)
+                {
+                    EditorGUILayout.HelpBox("No defaults asset assigned. Create one to configure per-platform import settings.", MessageType.Warning);
+                    if (GUILayout.Button("Create Defaults Asset"))
+                    {
+                        CreateDefaultsAsset();
+                    }
+                }
+                else
+                {
+                    EditorGUI.BeginChangeCheck();
+
+                    showDefaultPreset = EditorGUILayout.Foldout(showDefaultPreset, "Default (fallback)", true);
+                    if (showDefaultPreset)
+                    {
+                        DrawPreset(importDefaults.defaultPreset, false);
+                    }
+
+                    showStandalonePreset = EditorGUILayout.Foldout(showStandalonePreset, "Standalone (PC) Override", true);
+                    if (showStandalonePreset)
+                    {
+                        DrawPreset(importDefaults.standalonePreset, true);
+                    }
+
+                    showAndroidPreset = EditorGUILayout.Foldout(showAndroidPreset, "Android (Quest) Override", true);
+                    if (showAndroidPreset)
+                    {
+                        DrawPreset(importDefaults.androidPreset, true);
+                    }
+
+                    if (EditorGUI.EndChangeCheck())
+                    {
+                        EditorUtility.SetDirty(importDefaults);
+                    }
+                }
+            }
+            EditorGUILayout.EndVertical();
+            EditorGUILayout.Space();
+        }
+
+        private void DrawPreset(TextureImportDefaults.PlatformPreset preset, bool isOverride)
+        {
+            EditorGUI.indentLevel++;
+
+            if (isOverride)
+            {
+                preset.overrideEnabled = EditorGUILayout.Toggle("Override For Platform", preset.overrideEnabled);
+            }
+
+            using (new EditorGUI.DisabledScope(isOverride && !preset.overrideEnabled))
+            {
+                preset.maxTextureSize = EditorGUILayout.IntPopup("Max Size", preset.maxTextureSize, maxSizeLabels, maxSizeValues);
+                preset.resizeAlgorithm = (TextureResizeAlgorithm)EditorGUILayout.EnumPopup("Resize Algorithm", preset.resizeAlgorithm);
+                preset.compression = (TextureImporterCompression)EditorGUILayout.EnumPopup("Compression", preset.compression);
+
+                preset.useExplicitFormat = EditorGUILayout.Toggle("Explicit Format", preset.useExplicitFormat);
+                if (preset.useExplicitFormat)
+                {
+                    preset.format = (TextureImporterFormat)EditorGUILayout.EnumPopup("Format", preset.format);
+                }
+
+                preset.crunchedCompression = EditorGUILayout.Toggle("Crunch Compression", preset.crunchedCompression);
+                if (preset.crunchedCompression)
+                {
+                    preset.compressionQuality = EditorGUILayout.IntSlider("Crunch Quality", preset.compressionQuality, 0, 100);
+                }
+            }
+
+            EditorGUI.indentLevel--;
         }
 
         private void DrawImpact()
@@ -506,6 +635,7 @@ namespace DoggoBrutus.WorldDev.Editor
             bool hasMips = false;
             bool isCompressed = false;
             string format = tex.GetType().Name;
+            string assetPath = AssetDatabase.GetAssetPath(tex);
             if (tex is Texture2D tex2D)
             {
                 hasMips = tex2D.mipmapCount > 1;
@@ -530,11 +660,159 @@ namespace DoggoBrutus.WorldDev.Editor
                 isCompressed = isCompressed,
                 isPowerOfTwo = Mathf.IsPowerOfTwo(tex.width) && Mathf.IsPowerOfTwo(tex.height),
                 memoryBytes = Profiler.GetRuntimeMemorySizeLong(tex),
+                assetPath = assetPath,
+                isImportable = !string.IsNullOrEmpty(assetPath) && (AssetImporter.GetAtPath(assetPath) is TextureImporter),
                 usageCount = 1,
                 usedByMaterials = new List<Material> { material }
             };
             textureUsage[tex] = info;
             return info;
+        }
+
+        private void EnsureImportDefaultsLoaded()
+        {
+            if (importDefaults != null)
+            {
+                return;
+            }
+
+            string[] guids = AssetDatabase.FindAssets("t:TextureImportDefaults");
+            if (guids.Length > 0)
+            {
+                string path = AssetDatabase.GUIDToAssetPath(guids[0]);
+                importDefaults = AssetDatabase.LoadAssetAtPath<TextureImportDefaults>(path);
+            }
+        }
+
+        private void CreateDefaultsAsset()
+        {
+            string path = EditorUtility.SaveFilePanelInProject(
+                "Create Texture Import Defaults", "TextureImportDefaults", "asset",
+                "Choose where to save the shared defaults asset.");
+            if (string.IsNullOrEmpty(path))
+            {
+                return;
+            }
+
+            TextureImportDefaults asset = ScriptableObject.CreateInstance<TextureImportDefaults>();
+            AssetDatabase.CreateAsset(asset, path);
+            AssetDatabase.SaveAssets();
+            importDefaults = asset;
+            EditorGUIUtility.PingObject(asset);
+        }
+
+        private void ApplyImportSettings(TextureUsage texInfo)
+        {
+            if (importDefaults == null || texInfo == null || string.IsNullOrEmpty(texInfo.assetPath))
+            {
+                return;
+            }
+
+            TextureImporter importer = AssetImporter.GetAtPath(texInfo.assetPath) as TextureImporter;
+            if (importer == null)
+            {
+                EditorUtility.DisplayDialog("Fix Import Settings", "This texture is not backed by an importable asset.", "OK");
+                return;
+            }
+
+            bool confirmed = EditorUtility.DisplayDialog(
+                "Apply Import Settings",
+                $"Apply import defaults to '{texInfo.textureName}' and reimport?\n\n{texInfo.assetPath}",
+                "Apply & Reimport", "Cancel");
+            if (!confirmed)
+            {
+                return;
+            }
+
+            ApplyPresetToDefault(importer, importDefaults.defaultPreset);
+            ApplyPresetToPlatform(importer, "Standalone", importDefaults.standalonePreset);
+            ApplyPresetToPlatform(importer, "Android", importDefaults.androidPreset);
+            importer.SaveAndReimport();
+
+            RefreshTextureInfo(texInfo);
+        }
+
+        private static void ApplyPresetToDefault(TextureImporter importer, TextureImportDefaults.PlatformPreset preset)
+        {
+            TextureImporterPlatformSettings settings = importer.GetDefaultPlatformTextureSettings();
+            settings.maxTextureSize = preset.maxTextureSize;
+            settings.resizeAlgorithm = preset.resizeAlgorithm;
+            settings.textureCompression = preset.compression;
+            settings.crunchedCompression = preset.crunchedCompression;
+            settings.compressionQuality = preset.compressionQuality;
+            settings.format = preset.useExplicitFormat ? preset.format : TextureImporterFormat.Automatic;
+            importer.SetPlatformTextureSettings(settings);
+        }
+
+        private static void ApplyPresetToPlatform(TextureImporter importer, string platform, TextureImportDefaults.PlatformPreset preset)
+        {
+            TextureImporterPlatformSettings settings = importer.GetPlatformTextureSettings(platform);
+            settings.overridden = preset.overrideEnabled;
+            if (preset.overrideEnabled)
+            {
+                settings.maxTextureSize = preset.maxTextureSize;
+                settings.resizeAlgorithm = preset.resizeAlgorithm;
+                settings.textureCompression = preset.compression;
+                settings.crunchedCompression = preset.crunchedCompression;
+                settings.compressionQuality = preset.compressionQuality;
+                settings.format = preset.useExplicitFormat ? preset.format : TextureImporterFormat.Automatic;
+            }
+            importer.SetPlatformTextureSettings(settings);
+        }
+
+        private void RefreshTextureInfo(TextureUsage texInfo)
+        {
+            Texture tex = texInfo.texture;
+            if (tex != null)
+            {
+                texInfo.width = tex.width;
+                texInfo.height = tex.height;
+                texInfo.memoryBytes = Profiler.GetRuntimeMemorySizeLong(tex);
+                texInfo.isPowerOfTwo = Mathf.IsPowerOfTwo(tex.width) && Mathf.IsPowerOfTwo(tex.height);
+                if (tex is Texture2D tex2D)
+                {
+                    texInfo.hasMipmaps = tex2D.mipmapCount > 1;
+                    texInfo.format = tex2D.format.ToString();
+                    texInfo.isCompressed = IsCompressedFormat(tex2D.format);
+                }
+            }
+
+            RecomputeTextureAggregates();
+            Repaint();
+        }
+
+        private void RecomputeTextureAggregates()
+        {
+            uniqueTextureMemory = 0;
+            texturesWithoutMipmaps = 0;
+            uncompressedTextureCount = 0;
+            uncompressedTextureMemory = 0;
+            nonPowerOfTwoCount = 0;
+            largeTextureCount = 0;
+
+            foreach (TextureUsage t in textureUsage.Values)
+            {
+                uniqueTextureMemory += t.memoryBytes;
+                if (!t.hasMipmaps)
+                {
+                    texturesWithoutMipmaps++;
+                }
+                if (!t.isCompressed)
+                {
+                    uncompressedTextureCount++;
+                    uncompressedTextureMemory += t.memoryBytes;
+                }
+                if (!t.isPowerOfTwo)
+                {
+                    nonPowerOfTwoCount++;
+                }
+                if (t.width >= 2048 || t.height >= 2048)
+                {
+                    largeTextureCount++;
+                }
+            }
+
+            sortedTextures = textureUsage.Values.OrderByDescending(t => t.memoryBytes).ToList();
         }
 
         private void BuildShaderGroups()
