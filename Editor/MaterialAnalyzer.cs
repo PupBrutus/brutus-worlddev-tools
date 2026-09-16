@@ -331,6 +331,7 @@ namespace DoggoBrutus.WorldDev.Editor
             EditorGUILayout.HelpBox(string.Join("\n\n", warnings), MessageType.Warning);
         }
 
+        private void AnalyzeMaterials()
         {
             totalMaterialSlots = 0;
             uniqueMaterialCount = 0;
