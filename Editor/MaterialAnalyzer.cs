@@ -175,7 +175,7 @@ namespace DoggoBrutus.WorldDev.Editor
                     {
                         EditorGUILayout.BeginHorizontal();
                         GUILayout.Space(16);
-                        if (GUILayout.Button(usage.materialName, EditorStyles.linkLabel, GUILayout.Width(240)))
+                        if (GUILayout.Button(usage.materialName, GUILayout.Width(240)))
                         {
                             SelectMaterial(usage.material);
                         }
@@ -218,7 +218,7 @@ namespace DoggoBrutus.WorldDev.Editor
                 EditorGUILayout.BeginVertical("box");
 
                 EditorGUILayout.BeginHorizontal();
-                if (GUILayout.Button(tex.textureName, EditorStyles.linkLabel, GUILayout.Width(240)))
+                if (GUILayout.Button(tex.textureName, GUILayout.Width(240)))
                 {
                     SelectObject(tex.texture);
                 }
@@ -282,7 +282,7 @@ namespace DoggoBrutus.WorldDev.Editor
             {
                 EditorGUILayout.BeginVertical("box");
                 EditorGUILayout.BeginHorizontal();
-                if (GUILayout.Button(usage.materialName, EditorStyles.linkLabel, GUILayout.Width(220)))
+                if (GUILayout.Button(usage.materialName, GUILayout.Width(220)))
                 {
                     SelectObject(usage.material);
                 }
